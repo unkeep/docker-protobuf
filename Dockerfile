@@ -1,8 +1,5 @@
 ARG ALPINE_VERSION
-ARG DART_VERSION
 ARG GO_VERSION
-ARG RUST_VERSION
-ARG SWIFT_VERSION
 ARG NODE_VERSION
 ARG GOTEMPLATE_VERSION
 
@@ -118,11 +115,11 @@ RUN mkdir -p ${GOPATH}/src/github.com/danielvladco/go-proto-gql && \
 
 ARG PROTOC_GEN_LINT_VERSION
 RUN cd / && \
-    curl -sSLO https://github.com/ckaznocha/protoc-gen-lint/releases/download/v${PROTOC_GEN_LINT_VERSION}/protoc-gen-lint_linux_amd64.zip && \
+    curl -sSLO https://github.com/ckaznocha/protoc-gen-lint/releases/download/v${PROTOC_GEN_LINT_VERSION}/protoc-gen-lint_linux_${ARCH}.zip && \
     mkdir -p /protoc-gen-lint-out && \
     cd /protoc-gen-lint-out && \
-    unzip -q /protoc-gen-lint_linux_amd64.zip && \
-    install -Ds /protoc-gen-lint-out/protoc-gen-lint /out/usr/bin/protoc-gen-lint
+    unzip -q /protoc-gen-lint_linux_${ARCH}.zip && \
+install -D /protoc-gen-lint-out/protoc-gen-lint /out/usr/bin/protoc-gen-lint
 
 ARG PROTOC_GEN_VALIDATE_VERSION
 RUN mkdir -p ${GOPATH}/src/github.com/envoyproxy/protoc-gen-validate && \
@@ -162,49 +159,12 @@ RUN mkdir -p ${GOPATH}/src/github.com/chrusty/protoc-gen-jsonschema && \
     install -D ./options.proto /out/usr/include/github.com/chrusty/protoc-gen-jsonschema/options.proto
 
 
-FROM rust:${RUST_VERSION}-alpine as rust_builder
-RUN apk add --no-cache curl
-RUN rustup target add x86_64-unknown-linux-musl
+RUN apk add --no-cache curl patchelf
 
-ARG RUST_PROTOBUF_VERSION
-RUN mkdir -p /rust-protobuf && \
-    curl -sSL https://api.github.com/repos/stepancheg/rust-protobuf/tarball/v${RUST_PROTOBUF_VERSION} | tar xz --strip 1 -C /rust-protobuf && \
-    cd /rust-protobuf/protobuf-codegen && cargo build --target=x86_64-unknown-linux-musl --release && \
-    install -Ds /rust-protobuf/target/x86_64-unknown-linux-musl/release/protoc-gen-rust /out/usr/bin/protoc-gen-rust
+# RUN apt-get update
+# RUN apt-get install -y patchelf libnghttp2-dev libssl-dev zlib1g-dev
 
-ARG GRPC_RUST_VERSION
-RUN mkdir -p /grpc-rust && curl -sSL https://api.github.com/repos/stepancheg/grpc-rust/tarball/v${GRPC_RUST_VERSION} | tar xz --strip 1 -C /grpc-rust && \
-    cd /grpc-rust/grpc-compiler && cargo build --target=x86_64-unknown-linux-musl --release && \
-    install -Ds /grpc-rust/target/x86_64-unknown-linux-musl/release/protoc-gen-rust-grpc /out/usr/bin/protoc-gen-rust-grpc
-
-
-FROM swift:${SWIFT_VERSION} as swift_builder
-RUN apt-get update && \
-    apt-get install -y unzip patchelf libnghttp2-dev curl libssl-dev zlib1g-dev
-
-ARG GRPC_SWIFT_VERSION
-RUN mkdir -p /grpc-swift && \
-    curl -sSL https://api.github.com/repos/grpc/grpc-swift/tarball/${GRPC_SWIFT_VERSION} | tar xz --strip 1 -C /grpc-swift && \
-    cd /grpc-swift && make && make plugins && \
-    install -Ds /grpc-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-swift && \
-    install -Ds /grpc-swift/protoc-gen-grpc-swift /protoc-gen-swift/protoc-gen-grpc-swift && \
-    cp /lib64/ld-linux-x86-64.so.2 \
-        $(ldd /protoc-gen-swift/protoc-gen-swift /protoc-gen-swift/protoc-gen-grpc-swift | awk '{print $3}' | grep /lib | sort | uniq) \
-        /protoc-gen-swift/ && \
-    find /protoc-gen-swift/ -name 'lib*.so*' -exec patchelf --set-rpath /protoc-gen-swift {} \; && \
-    for p in protoc-gen-swift protoc-gen-grpc-swift; do \
-        patchelf --set-interpreter /protoc-gen-swift/ld-linux-x86-64.so.2 /protoc-gen-swift/${p}; \
-    done
-
-
-FROM google/dart:${DART_VERSION} as dart_builder
-RUN apt-get update && apt-get install -y musl-tools curl
-
-ARG DART_PROTOBUF_VERSION
-RUN mkdir -p /dart-protobuf && \
-    curl -sSL https://api.github.com/repos/google/protobuf.dart/tarball/protobuf-v${DART_PROTOBUF_VERSION} | tar xz --strip 1 -C /dart-protobuf && \
-    cd /dart-protobuf/protoc_plugin && pub install && dart2native --verbose bin/protoc_plugin.dart -o protoc_plugin && \
-    install -D /dart-protobuf/protoc_plugin/protoc_plugin /out/usr/bin/protoc-gen-dart
+# RUN apt-get install -y musl-tools
 
 FROM moul/protoc-gen-gotemplate:v${GOTEMPLATE_VERSION} as protoc_gotemplate
 
@@ -212,14 +172,11 @@ FROM alpine:${ALPINE_VERSION} as packer
 RUN apk add --no-cache curl
 
 ARG UPX_VERSION
-RUN mkdir -p /upx && curl -sSL https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz | tar xJ --strip 1 -C /upx && \
+RUN mkdir -p /upx && curl -sSL https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-${ARCH}_linux.tar.xz | tar xJ --strip 1 -C /upx && \
     install -D /upx/upx /usr/local/bin/upx
 
 COPY --from=protoc_builder /out/ /out/
 COPY --from=go_builder /out/ /out/
-COPY --from=rust_builder /out/ /out/
-COPY --from=swift_builder /protoc-gen-swift /out/protoc-gen-swift
-COPY --from=dart_builder /out/ /out/
 COPY --from=protoc_gotemplate /go/bin/protoc-gen-gotemplate /out/usr/bin/
 RUN upx --lzma $(find /out/usr/bin/ \
         -type f -name 'grpc_*' \
@@ -229,7 +186,6 @@ RUN upx --lzma $(find /out/usr/bin/ \
         -not -name 'grpc_ruby_plugin' \
         -not -name 'grpc_python_plugin' \
         -or -name 'protoc-gen-*' \
-        -not -name 'protoc-gen-dart' \
     )
 RUN find /out -name "*.a" -delete -or -name "*.la" -delete
 
@@ -244,7 +200,6 @@ RUN apk add --no-cache bash libstdc++ && \
     wget -q -O /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
     wget https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.31-r0/glibc-2.31-r0.apk && \
     apk add glibc-2.31-r0.apk && \
-    for p in protoc-gen-swift protoc-gen-swiftgrpc; do ln -s /protoc-gen-swift/${p} /usr/bin/${p}; done && \
     ln -s /usr/bin/grpc_cpp_plugin /usr/bin/protoc-gen-grpc-cpp && \
     ln -s /usr/bin/grpc_csharp_plugin /usr/bin/protoc-gen-grpc-csharp && \
     ln -s /usr/bin/grpc_objective_c_plugin /usr/bin/protoc-gen-grpc-objc && \
@@ -252,7 +207,6 @@ RUN apk add --no-cache bash libstdc++ && \
     ln -s /usr/bin/grpc_php_plugin /usr/bin/protoc-gen-grpc-php && \
     ln -s /usr/bin/grpc_python_plugin /usr/bin/protoc-gen-grpc-python && \
     ln -s /usr/bin/grpc_ruby_plugin /usr/bin/protoc-gen-grpc-ruby && \
-    ln -s /usr/bin/protoc-gen-swiftgrpc /usr/bin/protoc-gen-grpc-swift && \
     ln -s /usr/local/lib/node_modules/ts-protoc-gen/bin/protoc-gen-ts /usr/bin/protoc-gen-ts
 COPY protoc-wrapper /usr/bin/protoc-wrapper
 ENV LD_LIBRARY_PATH='/usr/lib:/usr/lib64:/usr/lib/local'
