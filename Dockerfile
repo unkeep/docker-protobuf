@@ -114,6 +114,7 @@ RUN mkdir -p ${GOPATH}/src/github.com/danielvladco/go-proto-gql && \
     install -Ds /go-proto-gql-out/protoc-gen-gogql /out/usr/bin/protoc-gen-gogql
 
 ARG PROTOC_GEN_LINT_VERSION
+ARG ARCH
 RUN cd / && \
     curl -sSLO https://github.com/ckaznocha/protoc-gen-lint/releases/download/v${PROTOC_GEN_LINT_VERSION}/protoc-gen-lint_linux_${ARCH}.zip && \
     mkdir -p /protoc-gen-lint-out && \
@@ -172,6 +173,7 @@ FROM alpine:${ALPINE_VERSION} as packer
 RUN apk add --no-cache curl
 
 ARG UPX_VERSION
+ARG ARCH
 RUN mkdir -p /upx && curl -sSL https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-${ARCH}_linux.tar.xz | tar xJ --strip 1 -C /upx && \
     install -D /upx/upx /usr/local/bin/upx
 
